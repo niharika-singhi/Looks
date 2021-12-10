@@ -1,0 +1,309 @@
+ Pager pager = new Pager(
+                new PagingConfig(/* pageSize = */ 20),
+                null, // initialKey
+                new RemoteMediator(null, RetrofitClient.getInsance().getApi(),database , Executors.newSingleThreadExecutor() ),
+                () -> photoDao.pagingSource());
+
+
+
+
+
+ @SuppressLint("RestrictedApi")
+    @NotNull
+    @Override
+    public ListenableFuture<MediatorResult> loadFuture(@NotNull LoadType loadType, @NotNull PagingState<Integer, Photo> state) {
+ //The network load method takes an optional after=<user.id> parameter. For
+        // every page after the first, pass the last user ID to let it continue from
+        // where it left off. For REFRESH, pass null to load the first page.
+        @SuppressLint("RestrictedApi") ResolvableFuture<RemoteKey> remoteKeyFuture = ResolvableFuture.create();
+        switch (loadType) {
+            case REFRESH:
+                remoteKeyFuture.set(new RemoteKey(query, null));
+                break;
+            case PREPEND:
+                // In this example, you never need to prepend, since REFRESH will always
+                // load the first page in the list. Immediately return, reporting end of
+                // pagination.
+                return Futures.immediateFuture(new MediatorResult.Success(true));
+            case APPEND:
+                Photo lastItem = state.lastItemOrNull();
+
+                // You must explicitly check if the last item is null when appending,
+                // since passing null to networkService is only valid for initial load.
+                // If lastItem is null it means no items were loaded after the initial
+                // REFRESH and there are no more items to load.
+                if (lastItem == null) {
+                    return Futures.immediateFuture(new MediatorResult.Success(true));
+                }
+
+                // Query remoteKeyDao for the next RemoteKey.
+                remoteKeyFuture.setFuture(
+                        remoteKeyDao.remoteKeyByQueryFuture(query));
+                break;
+        }
+
+        return Futures.transformAsync(remoteKeyFuture, remoteKey -> {
+            // You must explicitly check if the page key is null when appending,
+            // since null is only valid for initial load. If you receive null
+            // for APPEND, that means you have reached the end of pagination and
+            // there are no more items to load.
+            if (loadType != LoadType.REFRESH && remoteKey.nextKey == null) {
+                return Futures.immediateFuture(new MediatorResult.Success(true));
+            }
+
+            ListenableFuture<MediatorResult> networkResult = Futures.transform(
+                    networkService.getAnswers(FETCH_RECENTS_METHOD, API_KEY, "json", "1",
+                            "url_s", "10", text, Integer.parseInt(remoteKey.nextKey))
+
+                    response -> {
+                        database.runInTransaction(() -> {
+                            if (loadType == LoadType.REFRESH) {
+                                photoDao.clearAll();
+                                remoteKeyDao.deleteByQuery(query);
+                            }
+
+                            // Update RemoteKey for this query.
+                            //in the photos before inserting save page num
+                            remoteKeyDao.insertOrReplace(new RemoteKey(query, response.getNextKey()));
+
+                            // Insert new users into database, which invalidates the current
+                            // PagingData, allowing Paging to present the updates in the DB.
+                            userDao.insertAll(response.getUsers());
+                        });
+
+                        return new MediatorResult.Success(response.getNextKey() == null);
+                    }, bgExecutor);
+
+            ListenableFuture<MediatorResult> ioCatchingNetworkResult =
+                    Futures.catching(
+                            networkResult,
+                            IOException.class,
+                            MediatorResult.Error::new,
+                            bgExecutor
+                    );
+
+            return Futures.catching(
+                    ioCatchingNetworkResult,
+                    HttpException.class,
+                    MediatorResult.Error::new,
+                    bgExecutor
+            );
+        }, bgExecutor);
+
+  }
+
+
+
+ //The network load method takes an optional after=<user.id> parameter. For
+        // every page after the first, pass the last user ID to let it continue from
+        // where it left off. For REFRESH, pass null to load the first page.
+        Integer page;
+        Photo photo=state.lastItemOrNull();
+        Log.d("Looks","Load type "+loadType);
+        if(photo==null )
+            page=1;
+        else
+            page=photo.page+1;
+            Log.d("Looks","page is"+page);
+            ListenableFuture<MediatorResult> networkResult = Futures.transform(
+                    networkService.getAnswers(FETCH_RECENTS_METHOD, API_KEY, "json", "1",
+                            "url_s", "20", text, page),
+
+                    response -> {
+                        database.runInTransaction(() -> {
+                            if (loadType == LoadType.REFRESH) {
+                                photoDao.clearAll();
+                                Log.d("Looks","Refresh so clearing");
+                            }
+
+                            Log.d("Looks","Response page num now "+response.photos.page+" total "+response.photos.total);
+
+                            // Insert new users into database, which invalidates the current
+                            // PagingData, allowing Paging to present the updates in the DB.
+                            photoDao.insertAll(response.photos.getPhotoList());
+                        });
+
+                        return new MediatorResult.Success(response.photos.page==3);
+                    }, bgExecutor);
+
+            ListenableFuture<MediatorResult> ioCatchingNetworkResult =
+                    Futures.catching(
+                            networkResult,
+                            IOException.class,
+                            MediatorResult.Error::new,
+                            bgExecutor
+                    );
+
+            return Futures.catching(
+                    ioCatchingNetworkResult,
+                    HttpException.class,
+                    MediatorResult.Error::new,
+                    bgExecutor
+            );
+        }
+
+
+
+           public void bindPhoto(Photo item,int position) {
+
+                    Bundle bundle = new Bundle();
+                    bundle.putString(ARG_PHOTO_URL, item.url_s);
+                    if (item != null) {
+                        Log.d("Looks", "Url is " + item.url_s);
+                        Glide.with(mCtx)
+                                .load(item.url_s)
+                                .into(imageView);
+                        //descTextView.setText(item.owner);
+                        descTextView.setText(item.title);
+
+                    } else {
+                        Toast.makeText(mCtx, "Item is null", Toast.LENGTH_LONG).show();
+                    }
+
+                    imageView.setOnClickListener(Navigation.createNavigateOnClickListener(R.id.photoFragment, bundle));
+
+                }
+            }
+
+
+
+
+            package com.niharika.android.looks;
+
+            import android.util.Log;
+
+            import androidx.concurrent.futures.ResolvableFuture;
+            import androidx.paging.ListenableFutureRemoteMediator;
+            import androidx.paging.LoadType;
+            import androidx.paging.PagingState;
+
+            import com.google.common.util.concurrent.Futures;
+            import com.google.common.util.concurrent.ListenableFuture;
+            import com.niharika.android.looks.room.Photo;
+            import com.niharika.android.looks.room.PhotoDao;
+            import com.niharika.android.looks.room.RemoteKeyDao;
+            import com.niharika.android.looks.room.RoomDb;
+
+            import org.jetbrains.annotations.NotNull;
+
+            import java.io.IOException;
+            import java.util.List;
+            import java.util.concurrent.Executor;
+            import java.util.concurrent.Executors;
+
+            import retrofit2.HttpException;
+
+
+            class RemoteMediator extends ListenableFutureRemoteMediator<Integer, Photo> {
+                private String mQuery;
+                private Api networkService;
+                private RoomDb database;
+                private PhotoDao photoDao;
+                private Executor bgExecutor;
+                private RemoteKeyDao mRemoteKeyDao;
+                private static final int FIRST_PAGE = 1;
+                private static final String text = "painting";
+                private static final String ACCESS_TOKEN = "stackoverflow";
+                private static final String API_KEY = "8f591a4d43458e72fb12a51872a504f0";
+                private static final String FETCH_RECENTS_METHOD = "flickr.photos.search";
+                ListenableFuture<MediatorResult> networkResult;
+
+                RemoteMediator(
+                        String query, Api Service, RoomDb mdatabase, Executor executor
+                ) {
+                    mQuery = query;
+                    networkService = Service;
+                    database = mdatabase;
+                    photoDao = database.photoDao();
+                    bgExecutor = executor;
+                    Log.d("Looks", "new Remote" +mQuery);
+
+                }
+
+                @NotNull
+                @Override
+                public ListenableFuture<InitializeAction> initializeFuture() {
+
+                    return super.initializeFuture();
+                }
+
+                @NotNull
+                @Override
+                public ListenableFuture<MediatorResult> loadFuture(
+                        @NotNull LoadType loadType,
+                        @NotNull PagingState<Integer, Photo> state
+                ) {
+                    // The network load method takes an optional after=<user.id> parameter. For
+                    // every page after the first, pass the last user ID to let it continue from
+                    // where it left off. For REFRESH, pass null to load the first page.
+                    Integer loadKey=null;
+                    ResolvableFuture<Integer> remoteKeyFuture = ResolvableFuture.create();
+                    switch (loadType) {
+                        case REFRESH:
+                            //remoteKeyFuture.set(1);
+                           /* Log.d("Looks", "its refresh");
+                            if(state.lastItemOrNull()==null) {
+
+                                remoteKeyFuture.set(1);
+                                Log.d("Looks", "its refresh set to 1");
+                                loadKey=1;
+                            }*/
+                            break;
+                        case PREPEND:
+                            Log.d("Looks", "its prepend");
+                            // In this example, you never need to prepend, since REFRESH will always
+                            // load the first page in the list. Immediately return, reporting end of
+                            // pagination.
+                            return Futures.immediateFuture(new MediatorResult.Success(true));
+                        case APPEND:
+                            Log.d("Looks", "its append");
+                            Photo lastItem = state.lastItemOrNull();
+                            // You must explicitly check if the last item is null when appending,
+                            // since passing null to networkService is only valid for initial load.
+                            // If lastItem is null it means no items were loaded after the initial
+                            // REFRESH and there are no more items to load.
+                            if (lastItem == null) {
+                                Log.d("Looks", "last item is null");
+                                return Futures.immediateFuture(new MediatorResult.Success(true));
+                            }
+                            remoteKeyFuture.set(lastItem.page + 1);
+                            break;
+                    }
+
+                    return Futures.transformAsync(remoteKeyFuture, remoteKey -> {
+                        ListenableFuture<MediatorResult> networkResult = Futures.transform(
+                                networkService.
+                                        getAnswers(FETCH_RECENTS_METHOD, API_KEY, "json", "1",
+                                                "url_s", "20", mQuery, remoteKey),
+                                response -> {
+                                    database.runInTransaction(() -> {
+                                        if (loadType == LoadType.REFRESH) {
+                                            photoDao.clearAll();
+                                            //remoteKeyFuture.set(1);
+                                        }
+                                        Log.d("LooksDebug","total is"+response.photos.total);
+                                        photoDao.insertAll(response.photos.getPhotoList());
+                                    });
+                                    if(response.photos.page==null){
+                                        Log.d("Looks","End");
+                                    }
+                                    Log.d("Looks","page is changing to"+response.photos.total);
+                                    return new MediatorResult.Success(response.photos.page == null);
+                                }, bgExecutor);
+
+                        ListenableFuture<MediatorResult> ioCatchingNetworkResult =
+                                Futures.catching(
+                                        networkResult,
+                                        IOException.class,
+                                        MediatorResult.Error::new,
+                                        bgExecutor
+                                );
+                        return Futures.catching(
+                                ioCatchingNetworkResult,
+                                HttpException.class,
+                                MediatorResult.Error::new,
+                                bgExecutor
+                        );
+                    }, bgExecutor);
+                }
+            }

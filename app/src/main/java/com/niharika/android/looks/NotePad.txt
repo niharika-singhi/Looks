@@ -1,0 +1,62 @@
+Problem: It loads again and again
+
+
+-Create a class that reads data from instagram
+-Create a model class to read data from insta post
+-Create a service that reads the data from instagram
+-Create a search feature
+
+-Improve the design
+-Loading symbol
+-Delete  the db
+
+-Toast added to favs is not displayed
+
+
+
+package com.niharika.android.looks;
+
+import java.util.List;
+
+
+
+    <?xml version="1.0" encoding="utf-8"?>
+
+    <androidx.cardview.widget.CardView
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp">
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <ImageView
+                android:id="@+id/makeup_img"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:src="@drawable/dummy" />
+
+            <TextView
+                android:id="@+id/name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/makeup_img"
+                android:theme="@style/TextAppearance.AppCompat.Title"
+               android:contentDescription="@string/content_desc_image"
+                android:text="Niharika:"
+                android:textStyle="bold"
+                />
+
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/desc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/makeup_img"
+                android:layout_toEndOf="@+id/name"
+                android:layout_toRightOf="@+id/name"
+                android:theme="@style/TextAppearance.AppCompat.Title"
+                android:text="Mesmerized buthe twinkling eyes" />
+        </RelativeLayout>
+    </androidx.cardview.widget.CardView>
