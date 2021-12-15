@@ -20,6 +20,8 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.request.RequestOptions;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.snackbar.Snackbar;
 import com.niharika.android.looks.room.FavoritePhoto;
@@ -94,10 +96,15 @@ public class ItemAdapter extends PagingDataAdapter<Photo, ItemAdapter.ItemViewHo
     }
 
     private void showImage(String url,ImageView imageView) {
+        /*Glide.with(mCtx)
+                .load(url)
+                .override(viewWidth, viewHeight-20)
+                .into(imageView);*/
+
         Glide.with(mCtx)
                 .load(url)
-                .override(viewWidth, viewHeight)
-                .centerCrop()
+        .apply(new RequestOptions().override(imageView.getWidth(), imageView.getHeight())
+                .diskCacheStrategy(DiskCacheStrategy.ALL))
                 .into(imageView);
     }
 
